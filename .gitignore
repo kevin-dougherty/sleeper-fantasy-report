@@ -4,3 +4,4 @@ __pycache__/
 venv/
 weekly_report.txt
 .DS_Store
+config.json

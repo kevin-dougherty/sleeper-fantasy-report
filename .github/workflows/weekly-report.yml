@@ -1,0 +1,30 @@
+name: Weekly Sleeper Report
+
+on:
+  schedule:
+    # 12:00 UTC = 8:00 AM ET / 7:00 AM CT — runs every Tuesday.
+    # Adjust the hour to taste; GitHub Actions cron is always UTC.
+    - cron: "0 12 * * 2"
+  workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Generate and post report
+        env:
+          LEAGUE_ID: ${{ secrets.LEAGUE_ID }}
+          GROUPME_BOT_ID: ${{ secrets.GROUPME_BOT_ID }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: python src/sleeper_weekly_report.py
