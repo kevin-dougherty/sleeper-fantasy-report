@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+.venv/
+venv/
+weekly_report.txt
+.DS_Store
