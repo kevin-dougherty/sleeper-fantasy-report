@@ -37,5 +37,17 @@ jobs:
           }
           EOF
 
+      - name: Debug - confirm config.json exists
+        run: |
+          echo "Working directory:"
+          pwd
+          echo "Files here:"
+          ls -la
+          echo "config.json exists?"
+          test -f config.json && echo "YES, file exists" || echo "NO, file is missing"
+          echo "LEAGUE_ID secret set?"
+          if [ -z "${{ secrets.LEAGUE_ID }}" ]; then echo "LEAGUE_ID is EMPTY or unset"; else echo "LEAGUE_ID has a value"; fi
+
       - name: Generate and post report
         run: python src/sleeper_weekly_report.py
+
