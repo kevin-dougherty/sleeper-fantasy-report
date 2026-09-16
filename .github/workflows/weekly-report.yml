@@ -31,7 +31,7 @@ jobs:
           cat > config.json << EOF
           {
             "league_id": "$LEAGUE_ID",
-            "week": null,
+            "week": 1,
             "groupme_bot_id": "$GROUPME_BOT_ID",
             "anthropic_api_key": "$ANTHROPIC_API_KEY"
           }
