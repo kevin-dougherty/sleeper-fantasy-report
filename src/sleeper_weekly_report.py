@@ -1,27 +1,28 @@
 """
 Sleeper Weekly Fantasy Football Report Generator
 --------------------------------------------------
-Pulls data from the free, public Sleeper API (no auth needed), builds a report
-showing the weekly high-score team, position point leaders (QB/RB/WR/TE), and
-a few highlights — optionally adds a short AI-generated recap via the Claude
-API, then posts the whole thing to a GroupMe group.
+Pulls data from the free, public Sleeper API (no auth needed) and builds a
+weekly report:
+  - Team of the Week (weekly high score) + its top contributors
+  - Weekly MVP (single highest-scoring starter league-wide) + box score stats
+  - Position Point Leaders — SEASON-LONG cumulative totals for QB/RB/WR/TE
+  - Highlights: closest matchup, biggest blowout, bench regret
+  - A short AI-generated recap via the Claude API (trash talk optional but encouraged)
+Then optionally posts the whole thing to a GroupMe group.
 
-CONFIG (in priority order — highest wins):
-  1. CLI args:      --league-id, --week
-  2. Environment:   LEAGUE_ID, WEEK, GROUPME_BOT_ID, ANTHROPIC_API_KEY
-  3. config.json:   copy config.example.json -> config.json and fill it in
-                     (config.json is gitignored — safe to keep real values there)
+CONFIG: everything is read from config.json in the repo root.
+  copy config.example.json -> config.json and fill it in
+  (config.json is gitignored — safe to keep real values there)
 
 USAGE:
     python src/sleeper_weekly_report.py
-    python src/sleeper_weekly_report.py --league-id 378845311639904256 --week 3
+    python src/sleeper_weekly_report.py --no-post
 
 Requires: pip install -r requirements.txt
 """
 
 import argparse
 import json
-import os
 import sys
 from pathlib import Path
 
@@ -30,35 +31,36 @@ import requests
 BASE = "https://api.sleeper.app/v1"
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.json"
 ANTHROPIC_MODEL = "claude-sonnet-5"
+POSITIONS = ["QB", "RB", "WR", "TE"]
 
 
 # --------------------------------------------------------------------------
 # Config loading
 # --------------------------------------------------------------------------
 
-def load_config(cli_league_id=None, cli_week=None):
-    cfg = {}
-    if CONFIG_PATH.exists():
-        with open(CONFIG_PATH) as f:
-            cfg = json.load(f)
-
-    league_id = cli_league_id or os.environ.get("LEAGUE_ID") or cfg.get("league_id")
-    week_raw = cli_week or os.environ.get("WEEK") or cfg.get("week")
-    week = int(week_raw) if week_raw else None
-    groupme_bot_id = os.environ.get("GROUPME_BOT_ID") or cfg.get("groupme_bot_id")
-    anthropic_api_key = os.environ.get("ANTHROPIC_API_KEY") or cfg.get("anthropic_api_key")
-
-    if not league_id or league_id.startswith("YOUR_"):
+def load_config():
+    if not CONFIG_PATH.exists():
         sys.exit(
-            "No league_id found. Set it via --league-id, the LEAGUE_ID env var, "
-            "or config.json (copy config.example.json to config.json first)."
+            f"No config.json found at {CONFIG_PATH}. "
+            "Copy config.example.json to config.json and fill it in first."
         )
 
+    with open(CONFIG_PATH) as f:
+        cfg = json.load(f)
+
+    league_id = cfg.get("league_id")
+    week = cfg.get("week")
+    groupme_bot_id = cfg.get("groupme_bot_id")
+    anthropic_api_key = cfg.get("anthropic_api_key")
+
+    if not league_id or str(league_id).startswith("YOUR_"):
+        sys.exit("config.json is missing a real league_id. Fill it in and try again.")
+
     return {
-        "league_id": league_id,
-        "week": week,
-        "groupme_bot_id": groupme_bot_id if groupme_bot_id and not groupme_bot_id.startswith("YOUR_") else None,
-        "anthropic_api_key": anthropic_api_key if anthropic_api_key and not anthropic_api_key.startswith("YOUR_") else None,
+        "league_id": str(league_id),
+        "week": int(week) if week else None,
+        "groupme_bot_id": groupme_bot_id if groupme_bot_id and not str(groupme_bot_id).startswith("YOUR_") else None,
+        "anthropic_api_key": anthropic_api_key if anthropic_api_key and not str(anthropic_api_key).startswith("YOUR_") else None,
     }
 
 
@@ -75,6 +77,20 @@ def get_json(url):
 def get_current_week():
     state = get_json(f"{BASE}/state/nfl")
     return state["week"]
+
+
+def get_league_season(league_id):
+    info = get_json(f"{BASE}/league/{league_id}")
+    return info["season"]
+
+
+def get_week_stats(season, week):
+    """Real box-score stats (yards, TDs, etc.) for every player in a given week."""
+    try:
+        return get_json(f"{BASE}/stats/nfl/regular/{season}/{week}")
+    except Exception as e:
+        print(f"Could not fetch box score stats (error: {e})", file=sys.stderr)
+        return {}
 
 
 def load_league_data(league_id, week):
@@ -105,25 +121,72 @@ def player_display(players, player_id):
     return name, pos
 
 
+def format_stat_line(pid, pos, week_stats):
+    """Turn a player's box-score stats into a short readable line, e.g.
+    '312 pass yds, 3 pass TD, 41 rush yds'. Returns None if nothing usable."""
+    s = week_stats.get(pid, {}) or {}
+    parts = []
+
+    def add(key, label, plural_ok=True):
+        val = s.get(key)
+        if val:
+            val = int(val)
+            suffix = "s" if plural_ok and val != 1 else ""
+            parts.append(f"{val} {label}{suffix}")
+
+    if pos == "QB":
+        add("pass_yd", "pass yd", plural_ok=False)
+        add("pass_td", "pass TD")
+        add("pass_int", "INT")
+        add("rush_yd", "rush yd", plural_ok=False)
+        add("rush_td", "rush TD")
+    elif pos == "RB":
+        add("rush_yd", "rush yd", plural_ok=False)
+        add("rush_td", "rush TD")
+        add("rec", "rec")
+        add("rec_yd", "rec yd", plural_ok=False)
+        add("rec_td", "rec TD")
+    elif pos in ("WR", "TE"):
+        add("rec", "rec")
+        add("rec_yd", "rec yd", plural_ok=False)
+        add("rec_td", "rec TD")
+        add("rush_yd", "rush yd", plural_ok=False)
+
+    return ", ".join(parts) if parts else None
+
+
 # --------------------------------------------------------------------------
-# Report computation
+# Report computation — this week
 # --------------------------------------------------------------------------
 
-def compute_report_data(users, rosters, matchups, players):
+def compute_report_data(users, rosters, matchups, players, week_stats):
     team_names = build_team_name_map(users, rosters)
 
-    team_scores = []
+    team_scores = []  # (team_name, points, roster_id)
     matchup_groups = {}
     for m in matchups:
         roster_id = m["roster_id"]
         points = m.get("points", 0) or 0
         team_name = team_names.get(roster_id, f"Roster {roster_id}")
-        team_scores.append((team_name, points))
+        team_scores.append((team_name, points, roster_id))
         matchup_groups.setdefault(m.get("matchup_id"), []).append((team_name, points))
 
     team_scores.sort(key=lambda x: x[1], reverse=True)
-    high_score_team, high_score_pts = team_scores[0]
+    high_score_team, high_score_pts, high_score_roster_id = team_scores[0]
+    low_score_team, low_score_pts, _ = team_scores[-1]
 
+    # Top contributors on the winning team (its two highest-scoring starters)
+    top_contributors = []
+    winning_matchup = next((m for m in matchups if m["roster_id"] == high_score_roster_id), None)
+    if winning_matchup:
+        starters = winning_matchup.get("starters", []) or []
+        player_points = winning_matchup.get("players_points", {}) or {}
+        scored = sorted(((pid, player_points.get(pid, 0)) for pid in starters), key=lambda x: x[1], reverse=True)
+        for pid, pts in scored[:2]:
+            name, pos = player_display(players, pid)
+            top_contributors.append((name, pos, pts))
+
+    # Closest matchup / biggest blowout
     closest = None
     biggest_blowout = None
     for teams in matchup_groups.values():
@@ -137,8 +200,10 @@ def compute_report_data(users, rosters, matchups, players):
         if biggest_blowout is None or diff > biggest_blowout[0]:
             biggest_blowout = entry
 
-    pos_leaders = {"QB": None, "RB": None, "WR": None, "TE": None}
+    # Weekly MVP / biggest bust (highest & lowest scoring starters league-wide) + bench regret
     bench_waste = []
+    mvp = None             # (name, pos, team_name, pts, stat_line)
+    lowest_starter = None  # (name, pos, team_name, pts)
 
     for m in matchups:
         roster_id = m["roster_id"]
@@ -148,12 +213,13 @@ def compute_report_data(users, rosters, matchups, players):
 
         for pid, pts in player_points.items():
             name, pos = player_display(players, pid)
-            is_starter = pid in starters
-            if is_starter and pos in pos_leaders:
-                current = pos_leaders[pos]
-                if current is None or pts > current[1]:
-                    pos_leaders[pos] = (name, pts, team_name)
-            if not is_starter:
+            if pid in starters:
+                if mvp is None or pts > mvp[3]:
+                    stat_line = format_stat_line(pid, pos, week_stats)
+                    mvp = (name, pos, team_name, pts, stat_line)
+                if lowest_starter is None or pts < lowest_starter[3]:
+                    lowest_starter = (name, pos, team_name, pts)
+            else:
                 bench_waste.append((team_name, name, pos, pts))
 
     bench_waste.sort(key=lambda x: x[3], reverse=True)
@@ -162,31 +228,101 @@ def compute_report_data(users, rosters, matchups, players):
     return {
         "high_score_team": high_score_team,
         "high_score_pts": high_score_pts,
-        "pos_leaders": pos_leaders,
+        "low_score_team": low_score_team,
+        "low_score_pts": low_score_pts,
+        "top_contributors": top_contributors,
+        "mvp": mvp,
+        "lowest_starter": lowest_starter,
         "closest": closest,
         "biggest_blowout": biggest_blowout,
         "top_bench": top_bench,
     }
 
 
-def build_report_text(week, data, ai_blurb=None):
-    lines = [f"🏈 WEEK {week} RECAP 🏈", ""]
+# --------------------------------------------------------------------------
+# Report computation — season-long position leaders
+# --------------------------------------------------------------------------
+
+def compute_season_position_leaders(league_id, through_week, users, rosters, players):
+    """Cumulative starter points per player, weeks 1..through_week, then the
+    top total at each of QB/RB/WR/TE. Team shown is whoever currently rosters
+    that player (handles trades/waivers over the season)."""
+    team_names = build_team_name_map(users, rosters)
+    owner_map = {}
+    for r in rosters:
+        team = team_names.get(r["roster_id"])
+        for pid in (r.get("players") or []):
+            owner_map[pid] = team
+
+    season_totals = {}
+    for wk in range(1, through_week + 1):
+        try:
+            wk_matchups = get_json(f"{BASE}/league/{league_id}/matchups/{wk}")
+        except Exception as e:
+            print(f"Skipping week {wk} in season totals (error: {e})", file=sys.stderr)
+            continue
+        for m in wk_matchups:
+            starters = set(m.get("starters", []) or [])
+            player_points = m.get("players_points", {}) or {}
+            for pid, pts in player_points.items():
+                if pid not in starters:
+                    continue
+                season_totals[pid] = season_totals.get(pid, 0) + (pts or 0)
+
+    best = {pos: None for pos in POSITIONS}  # pos -> (player_id, total)
+    for pid, total in season_totals.items():
+        _, pos = player_display(players, pid)
+        if pos not in best:
+            continue
+        if best[pos] is None or total > best[pos][1]:
+            best[pos] = (pid, total)
+
+    leaders = {}
+    for pos, entry in best.items():
+        if entry is None:
+            leaders[pos] = None
+            continue
+        pid, total = entry
+        name, _ = player_display(players, pid)
+        team = owner_map.get(pid, "Free Agent")
+        leaders[pos] = (name, total, team)
+    return leaders
+
+
+# --------------------------------------------------------------------------
+# Report text assembly
+# --------------------------------------------------------------------------
+
+def build_report_text(week, data, season_leaders, ai_blurb=None):
+    lines = [f"WEEK {week} RECAP", ""]
 
     if ai_blurb:
         lines.append(ai_blurb.strip())
         lines.append("")
 
     lines.append(f"💰 Team of the Week: {data['high_score_team']} ({data['high_score_pts']:.2f} pts) — wins $15!")
+    if data["top_contributors"]:
+        contrib_str = ", ".join(f"{name} ({pos}, {pts:.2f} pts)" for name, pos, pts in data["top_contributors"])
+        lines.append(f"   Top contributors: {contrib_str}")
     lines.append("")
-    lines.append("💰 Position Point Leaders (each wins $15):")
-    for pos in ["QB", "RB", "WR", "TE"]:
-        leader = data["pos_leaders"][pos]
+
+    if data["mvp"]:
+        name, pos, team, pts, stat_line = data["mvp"]
+        lines.append(f"💰 Weekly MVP: {name} ({pos}, {team}) — {pts:.2f} pts — wins $15!")
+        if stat_line:
+            lines.append(f"   {stat_line}")
+        lines.append("")
+
+    lines.append("📈 Position Point Leaders (season total — top scorer at each position wins $25):")
+    for pos in POSITIONS:
+        leader = season_leaders.get(pos)
         if leader:
-            name, pts, team = leader
-            lines.append(f"   {pos}: {name} ({team}) — {pts:.2f} pts")
+            name, total, team = leader
+            lines.append(f"   {pos}: {name} ({team}) — {total:.2f} pts")
         else:
-            lines.append(f"   {pos}: no starters found")
+            lines.append(f"   {pos}: no data yet")
     lines.append("")
+
     lines.append("📊 Highlights:")
     if data["closest"]:
         diff, t1, p1, t2, p2 = data["closest"]
@@ -208,24 +344,36 @@ def build_report_text(week, data, ai_blurb=None):
 # --------------------------------------------------------------------------
 
 def generate_ai_commentary(week, data, api_key):
+    # Deliberately does NOT get closest/blowout/bench-regret — those are already
+    # covered in the Highlights section, so keeping them out here avoids the
+    # recap just repeating the stats block in prose.
     prompt = (
-        f"Write a fun, 2-3 sentence recap for week {week} of a fantasy football league group chat. "
-        f"Be playful and a little bit of a trash-talker, but keep it good-natured.\n\n"
-        f"Data:\n"
-        f"- Highest scoring team: {data['high_score_team']} with {data['high_score_pts']:.2f} points\n"
+        f"Write a fun, 4-6 sentence recap for week {week} of a fantasy football league group chat. "
+        f"Bring real trash talk — needling, mock disrespect, some chirping at the other teams — but keep it "
+        f"good-natured and nothing mean-spirited or personal. Definitely call out teams that had the worst "
+        f"overall score or low scoring started. This is a great group of friends, so have fun with it.\n\n"
+        f"Base it on:\n"
+        f"- Team of the week: {data['high_score_team']} with {data['high_score_pts']:.2f} points"
     )
-    if data["biggest_blowout"]:
-        diff, t1, p1, t2, p2 = data["biggest_blowout"]
-        winner = t1 if p1 > p2 else t2
-        loser = t2 if p1 > p2 else t1
-        prompt += f"- Biggest blowout: {winner} beat {loser} by {diff:.2f} points\n"
-    if data["closest"]:
-        diff, t1, t2 = data["closest"][0], data["closest"][1], data["closest"][3]
-        prompt += f"- Closest matchup: {t1} vs {t2}, decided by {diff:.2f} points\n"
-    if data["top_bench"]:
-        team, name, pos, pts = data["top_bench"]
-        prompt += f"- Bench regret: {team} left {name} ({pos}) on the bench for {pts:.2f} points\n"
-    prompt += "\nJust return the 2-3 sentences, nothing else."
+    if data["top_contributors"]:
+        contrib_str = ", ".join(f"{name} ({pts:.2f} pts)" for name, pos, pts in data["top_contributors"])
+        prompt += f", carried by {contrib_str}"
+    prompt += "\n"
+    if data["mvp"]:
+        name, pos, team, pts, _ = data["mvp"]
+        prompt += f"- Overall weekly high scorer: {name} ({pos}, {team}) with {pts:.2f} points\n"
+    if data["lowest_starter"]:
+        name, pos, team, pts = data["lowest_starter"]
+        prompt += (
+            f"- Biggest bust: {team} started {name} ({pos}), who only put up {pts:.2f} points — "
+            f"call this team out specifically for starting them\n"
+        )
+    prompt += f"- Lowest scoring team: {data['low_score_team']} with only {data['low_score_pts']:.2f} points\n"
+    prompt += (
+        "\nDon't mention the closest matchup, the biggest blowout, or anyone's bench — those are covered "
+        "elsewhere in the report. Return ONLY the recap text, nothing else — no preamble, no headers, "
+        "no quotation marks around it."
+    )
 
     try:
         r = requests.post(
@@ -237,7 +385,7 @@ def generate_ai_commentary(week, data, api_key):
             },
             json={
                 "model": ANTHROPIC_MODEL,
-                "max_tokens": 200,
+                "max_tokens": 350,
                 "messages": [{"role": "user", "content": prompt}],
             },
             timeout=30,
@@ -286,22 +434,24 @@ def post_to_groupme(text, bot_id):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate and (optionally) post a weekly Sleeper report.")
-    parser.add_argument("--league-id", dest="league_id", default=None)
-    parser.add_argument("--week", dest="week", default=None)
     parser.add_argument("--no-post", action="store_true", help="Print the report but skip posting to GroupMe.")
     args = parser.parse_args()
 
-    cfg = load_config(cli_league_id=args.league_id, cli_week=args.week)
+    cfg = load_config()
     week = cfg["week"] or get_current_week()
 
     users, rosters, matchups, players = load_league_data(cfg["league_id"], week)
-    data = compute_report_data(users, rosters, matchups, players)
+    season = get_league_season(cfg["league_id"])
+    week_stats = get_week_stats(season, week)
+
+    data = compute_report_data(users, rosters, matchups, players, week_stats)
+    season_leaders = compute_season_position_leaders(cfg["league_id"], week, users, rosters, players)
 
     ai_blurb = None
     if cfg["anthropic_api_key"]:
         ai_blurb = generate_ai_commentary(week, data, cfg["anthropic_api_key"])
 
-    report = build_report_text(week, data, ai_blurb)
+    report = build_report_text(week, data, season_leaders, ai_blurb)
     print(report)
 
     with open("weekly_report.txt", "w") as f:
