@@ -22,9 +22,20 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements.txt
 
-      - name: Generate and post report
+      - name: Write config.json from secrets
         env:
           LEAGUE_ID: ${{ secrets.LEAGUE_ID }}
           GROUPME_BOT_ID: ${{ secrets.GROUPME_BOT_ID }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          cat > config.json << EOF
+          {
+            "league_id": "$LEAGUE_ID",
+            "week": null,
+            "groupme_bot_id": "$GROUPME_BOT_ID",
+            "anthropic_api_key": "$ANTHROPIC_API_KEY"
+          }
+          EOF
+
+      - name: Generate and post report
         run: python src/sleeper_weekly_report.py
