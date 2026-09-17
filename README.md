@@ -88,24 +88,24 @@ Adjust the cron schedule in the workflow file if you want a different day/time �
 ```
 WEEK 3 RECAP
 
-Burrow McConk In Her put up an obscene 177 points this week while half this league was still trying to figure out their flex spot. Meanwhile All the Glory to Garrett got run out of the building, and someone's really out here starting a guy for 4 points like it's a dare.
+TD Machine put up an obscene 177 points this week while half this league was still trying to figure out their flex spot. Meanwhile Rush Attack got run out of the building, and someone's really out here starting a guy for 4 points like it's a dare.
 
-💰 Team of the Week: Burrow McConk In Her (177.36 pts) — wins $15!
+💰 Team of the Week: TD Machine (177.36 pts) — wins $15!
    Top contributors: Caleb Williams (QB, 37.26 pts), Ja'Marr Chase (WR, 24.10 pts)
 
-💰 Weekly MVP: Caleb Williams (QB, Cam Shaft) — 37.26 pts — wins $15!
+💰 Weekly MVP: Caleb Williams (QB, Team 4th and Long) — 37.26 pts — wins $15!
    312 pass yds, 3 pass TDs, 41 rush yds
 
 📈 Position Point Leaders (season total — top scorer at each position wins $25):
-   QB: Caleb Williams (Cam Shaft) — 37.26 pts
-   RB: Derrick Henry (Gay Retards) — 35.30 pts
+   QB: Caleb Williams (Gridiron Gladiators) — 37.26 pts
+   RB: Derrick Henry (Blitz Brigade) — 35.30 pts
    WR: Jalen Coker (Mo RBs Mo Problems) — 33.80 pts
-   TE: Isaiah Likely (CMC Lifetime Keeper) — 27.80 pts
+   TE: Isaiah Likely (No Punt Intended) — 27.80 pts
 
 📊 Highlights:
-   Nail-biter: Mayebe I Should Call Her (147.52) vs CMC Lifetime Keeper (156.56) — decided by 9.04 pts
-   Blowout: Reese's Pieces (173.60) crushed All the Glory to Garrett (73.16) by 100.44 pts
-   Bench regret: Canceled My 830 For This left Patrick Mahomes (QB) on the bench — 21.66 pts wasted
+   Nail-biter: Sunday Sofa Squad (147.52) vs No Punt Intended (156.56) — decided by 9.04 pts
+   Blowout: Fourth Quarter Comeback Kids (173.60) crushed Rush Attack (73.16) by 100.44 pts
+   Bench regret: Bye Week Blues left Patrick Mahomes (QB) on the bench — 21.66 pts wasted
 ```
 
 ## Notes
