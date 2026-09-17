@@ -75,8 +75,17 @@ def get_json(url):
 
 
 def get_current_week():
+    """Returns the most recently COMPLETED NFL week — suitable for a "here's what
+    just happened" recap.
+
+    Sleeper's /state/nfl "week" field is meant for transaction/waiver purposes and
+    typically rolls over early Tuesday morning, right after Monday Night Football
+    wraps but before that new week's games have been played. Since this script's
+    cron runs Tuesday mornings, using that value directly grabs the UPCOMING week
+    (all zeros) instead of the one that just finished — so we report week - 1.
+    """
     state = get_json(f"{BASE}/state/nfl")
-    return state["week"]
+    return max(state["week"] - 1, 1)
 
 
 def get_league_season(league_id):
@@ -294,7 +303,7 @@ def compute_season_position_leaders(league_id, through_week, users, rosters, pla
 # --------------------------------------------------------------------------
 
 def build_report_text(week, data, season_leaders, ai_blurb=None):
-    lines = [f"WEEK {week} RECAP", ""]
+    lines = [f"🏈 WEEK {week} RECAP 🏈", ""]
 
     if ai_blurb:
         lines.append(ai_blurb.strip())
@@ -308,7 +317,7 @@ def build_report_text(week, data, season_leaders, ai_blurb=None):
 
     if data["mvp"]:
         name, pos, team, pts, stat_line = data["mvp"]
-        lines.append(f"💰 Weekly MVP: {name} ({pos}, {team}) — {pts:.2f} pts — wins $15!")
+        lines.append(f"🌟 Weekly MVP: {name} ({pos}, {team}) — {pts:.2f} pts — wins $15!")
         if stat_line:
             lines.append(f"   {stat_line}")
         lines.append("")
@@ -348,10 +357,9 @@ def generate_ai_commentary(week, data, api_key):
     # covered in the Highlights section, so keeping them out here avoids the
     # recap just repeating the stats block in prose.
     prompt = (
-        f"Write a fun, 4-6 sentence recap for week {week} of a fantasy football league group chat. "
+        f"Write a fun, energetic 3-4 sentence recap for week {week} of a fantasy football league group chat. "
         f"Bring real trash talk — needling, mock disrespect, some chirping at the other teams — but keep it "
-        f"good-natured and nothing mean-spirited or personal. Definitely call out teams that had the worst "
-        f"overall score or low scoring started. This is a great group of friends, so have fun with it.\n\n"
+        f"good-natured and nothing mean-spirited or personal. This is a group of friends, so have fun with it.\n\n"
         f"Base it on:\n"
         f"- Team of the week: {data['high_score_team']} with {data['high_score_pts']:.2f} points"
     )
