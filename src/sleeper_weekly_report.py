@@ -303,7 +303,7 @@ def compute_season_position_leaders(league_id, through_week, users, rosters, pla
 # --------------------------------------------------------------------------
 
 def build_report_text(week, data, season_leaders, ai_blurb=None):
-    lines = [f"🏈 WEEK {week} RECAP 🏈", ""]
+    lines = [f"WEEK {week} RECAP", ""]
 
     if ai_blurb:
         lines.append(ai_blurb.strip())
@@ -317,7 +317,7 @@ def build_report_text(week, data, season_leaders, ai_blurb=None):
 
     if data["mvp"]:
         name, pos, team, pts, stat_line = data["mvp"]
-        lines.append(f"🌟 Weekly MVP: {name} ({pos}, {team}) — {pts:.2f} pts — wins $15!")
+        lines.append(f"💰 Weekly MVP: {name} ({pos}, {team}) — {pts:.2f} pts — wins $15!")
         if stat_line:
             lines.append(f"   {stat_line}")
         lines.append("")

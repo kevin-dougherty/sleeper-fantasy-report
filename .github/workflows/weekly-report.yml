@@ -4,7 +4,7 @@ on:
   schedule:
     # 12:00 UTC = 8:00 AM ET / 7:00 AM CT — runs every Tuesday.
     # Adjust the hour to taste; GitHub Actions cron is always UTC.
-    - cron: "0 12 * * 2"
+    - cron: "0 10 * * 2"
   workflow_dispatch: {}   # lets you trigger a run manually from the Actions tab
 
 jobs:
